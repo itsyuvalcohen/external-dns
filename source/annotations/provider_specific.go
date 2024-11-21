@@ -71,6 +71,16 @@ func ProviderSpecificAnnotations(annotations map[string]string) (endpoint.Provid
 				Name:  fmt.Sprintf("aws/%s", attr),
 				Value: v,
 			})
+		} else if strings.HasPrefix(k, GooglePrefix) {
+			// Unlike the other provider prefixes, the "google-" segment is kept as part of
+			// the property name (google.go's provider-specific constants, e.g.
+			// "google-routing-policy", expect it), so only the generic annotation-key
+			// prefix is stripped here, not GooglePrefix itself.
+			attr, _ := strings.CutPrefix(k, AnnotationKeyPrefix)
+			providerSpecificAnnotations = append(providerSpecificAnnotations, endpoint.ProviderSpecificProperty{
+				Name:  attr,
+				Value: v,
+			})
 		} else if attr, ok := strings.CutPrefix(k, SCWPrefix); ok {
 			providerSpecificAnnotations = append(providerSpecificAnnotations, endpoint.ProviderSpecificProperty{
 				Name:  fmt.Sprintf("scw/%s", attr),
