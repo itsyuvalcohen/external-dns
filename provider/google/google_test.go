@@ -503,6 +503,168 @@ func TestSoftErrListRecordsConflict(t *testing.T) {
 	require.Empty(t, records)
 }
 
+func TestGoogleApplyChangesGeoRoutingPolicyCreate(t *testing.T) {
+	p := newGoogleProvider(t, endpoint.NewDomainFilter([]string{"ext-dns-test-2.gcp.zalan.do."}), provider.NewZoneIDFilter([]string{""}), false, []*endpoint.Endpoint{}, nil, nil)
+
+	geoUS := endpoint.NewEndpointWithTTL("geo-test.zone-1.ext-dns-test-2.gcp.zalan.do", endpoint.RecordTypeA, defaultTTL, "1.1.1.1").
+		WithProviderSpecific(providerSpecificRoutingPolicy, providerSpecificRoutingPolicyGeo).
+		WithProviderSpecific(providerSpecificLocation, "us-east1").
+		WithSetIdentifier("us-east1")
+	geoEU := endpoint.NewEndpointWithTTL("geo-test.zone-1.ext-dns-test-2.gcp.zalan.do", endpoint.RecordTypeA, defaultTTL, "2.2.2.2").
+		WithProviderSpecific(providerSpecificRoutingPolicy, providerSpecificRoutingPolicyGeo).
+		WithProviderSpecific(providerSpecificLocation, "europe-west1").
+		WithSetIdentifier("europe-west1")
+
+	require.NoError(t, p.ApplyChanges(t.Context(), &plan.Changes{
+		Create: []*endpoint.Endpoint{geoUS, geoEU},
+	}))
+
+	records, err := p.Records(t.Context())
+	require.NoError(t, err)
+	validateEndpoints(t, records, []*endpoint.Endpoint{geoUS, geoEU})
+}
+
+func TestGoogleApplyChangesGeoRoutingPolicyUpdateOneLocation(t *testing.T) {
+	p := newGoogleProvider(t, endpoint.NewDomainFilter([]string{"ext-dns-test-2.gcp.zalan.do."}), provider.NewZoneIDFilter([]string{""}), false, []*endpoint.Endpoint{}, nil, nil)
+
+	geoUSOld := endpoint.NewEndpointWithTTL("geo-update-test.zone-1.ext-dns-test-2.gcp.zalan.do", endpoint.RecordTypeA, defaultTTL, "1.1.1.1").
+		WithProviderSpecific(providerSpecificRoutingPolicy, providerSpecificRoutingPolicyGeo).
+		WithProviderSpecific(providerSpecificLocation, "us-east1").
+		WithSetIdentifier("us-east1")
+	geoEU := endpoint.NewEndpointWithTTL("geo-update-test.zone-1.ext-dns-test-2.gcp.zalan.do", endpoint.RecordTypeA, defaultTTL, "2.2.2.2").
+		WithProviderSpecific(providerSpecificRoutingPolicy, providerSpecificRoutingPolicyGeo).
+		WithProviderSpecific(providerSpecificLocation, "europe-west1").
+		WithSetIdentifier("europe-west1")
+
+	require.NoError(t, p.ApplyChanges(t.Context(), &plan.Changes{
+		Create: []*endpoint.Endpoint{geoUSOld, geoEU},
+	}))
+
+	// Change only the us-east1 item's target; europe-west1 must survive untouched
+	// since Google's RRSet is a single object covering every location.
+	geoUSNew := endpoint.NewEndpointWithTTL("geo-update-test.zone-1.ext-dns-test-2.gcp.zalan.do", endpoint.RecordTypeA, defaultTTL, "9.9.9.9").
+		WithProviderSpecific(providerSpecificRoutingPolicy, providerSpecificRoutingPolicyGeo).
+		WithProviderSpecific(providerSpecificLocation, "us-east1").
+		WithSetIdentifier("us-east1")
+
+	require.NoError(t, p.ApplyChanges(t.Context(), &plan.Changes{
+		UpdateOld: []*endpoint.Endpoint{geoUSOld},
+		UpdateNew: []*endpoint.Endpoint{geoUSNew},
+	}))
+
+	records, err := p.Records(t.Context())
+	require.NoError(t, err)
+	validateEndpoints(t, records, []*endpoint.Endpoint{geoUSNew, geoEU})
+}
+
+func TestGoogleApplyChangesGeoRoutingPolicyDeleteLastLocationRemovesRRSet(t *testing.T) {
+	p := newGoogleProvider(t, endpoint.NewDomainFilter([]string{"ext-dns-test-2.gcp.zalan.do."}), provider.NewZoneIDFilter([]string{""}), false, []*endpoint.Endpoint{}, nil, nil)
+
+	geoUS := endpoint.NewEndpointWithTTL("geo-delete-test.zone-1.ext-dns-test-2.gcp.zalan.do", endpoint.RecordTypeA, defaultTTL, "1.1.1.1").
+		WithProviderSpecific(providerSpecificRoutingPolicy, providerSpecificRoutingPolicyGeo).
+		WithProviderSpecific(providerSpecificLocation, "us-east1").
+		WithSetIdentifier("us-east1")
+
+	require.NoError(t, p.ApplyChanges(t.Context(), &plan.Changes{
+		Create: []*endpoint.Endpoint{geoUS},
+	}))
+
+	require.NoError(t, p.ApplyChanges(t.Context(), &plan.Changes{
+		Delete: []*endpoint.Endpoint{geoUS},
+	}))
+
+	records, err := p.Records(t.Context())
+	require.NoError(t, err)
+	for _, r := range records {
+		assert.NotEqual(t, "geo-delete-test.zone-1.ext-dns-test-2.gcp.zalan.do", r.DNSName)
+	}
+}
+
+func TestGoogleApplyChangesWrrRoutingPolicyCreate(t *testing.T) {
+	p := newGoogleProvider(t, endpoint.NewDomainFilter([]string{"ext-dns-test-2.gcp.zalan.do."}), provider.NewZoneIDFilter([]string{""}), false, []*endpoint.Endpoint{}, nil, nil)
+
+	wrr0 := endpoint.NewEndpointWithTTL("wrr-test.zone-1.ext-dns-test-2.gcp.zalan.do", endpoint.RecordTypeA, defaultTTL, "1.1.1.1").
+		WithProviderSpecific(providerSpecificRoutingPolicy, providerSpecificRoutingPolicyWrr).
+		WithProviderSpecific(providerSpecificWeight, "30").
+		WithSetIdentifier("0")
+	wrr1 := endpoint.NewEndpointWithTTL("wrr-test.zone-1.ext-dns-test-2.gcp.zalan.do", endpoint.RecordTypeA, defaultTTL, "2.2.2.2").
+		WithProviderSpecific(providerSpecificRoutingPolicy, providerSpecificRoutingPolicyWrr).
+		WithProviderSpecific(providerSpecificWeight, "70").
+		WithSetIdentifier("1")
+
+	require.NoError(t, p.ApplyChanges(t.Context(), &plan.Changes{
+		Create: []*endpoint.Endpoint{wrr0, wrr1},
+	}))
+
+	records, err := p.Records(t.Context())
+	require.NoError(t, err)
+	validateEndpoints(t, records, []*endpoint.Endpoint{wrr0, wrr1})
+}
+
+func TestGoogleApplyChangesWrrRoutingPolicyShrinkCompactsItems(t *testing.T) {
+	p := newGoogleProvider(t, endpoint.NewDomainFilter([]string{"ext-dns-test-2.gcp.zalan.do."}), provider.NewZoneIDFilter([]string{""}), false, []*endpoint.Endpoint{}, nil, nil)
+
+	wrr0 := endpoint.NewEndpointWithTTL("wrr-shrink-test.zone-1.ext-dns-test-2.gcp.zalan.do", endpoint.RecordTypeA, defaultTTL, "1.1.1.1").
+		WithProviderSpecific(providerSpecificRoutingPolicy, providerSpecificRoutingPolicyWrr).
+		WithProviderSpecific(providerSpecificWeight, "33").
+		WithSetIdentifier("0")
+	wrr1 := endpoint.NewEndpointWithTTL("wrr-shrink-test.zone-1.ext-dns-test-2.gcp.zalan.do", endpoint.RecordTypeA, defaultTTL, "2.2.2.2").
+		WithProviderSpecific(providerSpecificRoutingPolicy, providerSpecificRoutingPolicyWrr).
+		WithProviderSpecific(providerSpecificWeight, "33").
+		WithSetIdentifier("1")
+	wrr2 := endpoint.NewEndpointWithTTL("wrr-shrink-test.zone-1.ext-dns-test-2.gcp.zalan.do", endpoint.RecordTypeA, defaultTTL, "3.3.3.3").
+		WithProviderSpecific(providerSpecificRoutingPolicy, providerSpecificRoutingPolicyWrr).
+		WithProviderSpecific(providerSpecificWeight, "34").
+		WithSetIdentifier("2")
+
+	require.NoError(t, p.ApplyChanges(t.Context(), &plan.Changes{
+		Create: []*endpoint.Endpoint{wrr0, wrr1, wrr2},
+	}))
+
+	// Drop the last item (index 2). The remaining items must still decode cleanly,
+	// exercising rrSetRoutingPolicyWrrItemPlaceholder's index-compaction path.
+	require.NoError(t, p.ApplyChanges(t.Context(), &plan.Changes{
+		Delete: []*endpoint.Endpoint{wrr2},
+	}))
+
+	records, err := p.Records(t.Context())
+	require.NoError(t, err)
+	validateEndpoints(t, records, []*endpoint.Endpoint{wrr0, wrr1})
+}
+
+func TestGoogleAdjustEndpointsWrrDefaultsWeight(t *testing.T) {
+	p := newGoogleProvider(t, endpoint.NewDomainFilter([]string{"ext-dns-test-2.gcp.zalan.do."}), provider.NewZoneIDFilter([]string{""}), false, []*endpoint.Endpoint{}, nil, nil)
+
+	ep := endpoint.NewEndpointWithTTL("wrr-adjust-test.zone-1.ext-dns-test-2.gcp.zalan.do", endpoint.RecordTypeA, defaultTTL, "1.1.1.1").
+		WithProviderSpecific(providerSpecificRoutingPolicy, providerSpecificRoutingPolicyWrr).
+		WithSetIdentifier("0")
+
+	adjusted, err := p.AdjustEndpoints([]*endpoint.Endpoint{ep})
+	require.NoError(t, err)
+	require.Len(t, adjusted, 1)
+
+	weight, ok := adjusted[0].GetProviderSpecificProperty(providerSpecificWeight)
+	require.True(t, ok)
+	assert.Equal(t, "100", weight)
+}
+
+func TestGoogleAdjustEndpointsGeoDefaultsLocationFromProvider(t *testing.T) {
+	p := newGoogleProvider(t, endpoint.NewDomainFilter([]string{"ext-dns-test-2.gcp.zalan.do."}), provider.NewZoneIDFilter([]string{""}), false, []*endpoint.Endpoint{}, nil, nil)
+	p.location = "us-central1"
+
+	ep := endpoint.NewEndpointWithTTL("geo-adjust-test.zone-1.ext-dns-test-2.gcp.zalan.do", endpoint.RecordTypeA, defaultTTL, "1.1.1.1").
+		WithProviderSpecific(providerSpecificRoutingPolicy, providerSpecificRoutingPolicyGeo)
+
+	adjusted, err := p.AdjustEndpoints([]*endpoint.Endpoint{ep})
+	require.NoError(t, err)
+	require.Len(t, adjusted, 1)
+
+	location, ok := adjusted[0].GetProviderSpecificProperty(providerSpecificLocation)
+	require.True(t, ok)
+	assert.Equal(t, "us-central1", location)
+	assert.Equal(t, "us-central1", adjusted[0].SetIdentifier)
+}
+
 func validateZones(t *testing.T, zones map[string]*dns.ManagedZone, expected map[string]*dns.ManagedZone) {
 	require.Len(t, zones, len(expected))
 

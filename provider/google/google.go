@@ -274,7 +274,11 @@ func (p *GoogleProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 					for index, item := range r.RoutingPolicy.Wrr.Items {
 						ep := endpoint.NewEndpointWithTTL(r.Name, r.Type, endpoint.TTL(r.Ttl), item.Rrdatas...)
 						ep.WithProviderSpecific(providerSpecificRoutingPolicy, providerSpecificRoutingPolicyWrr)
-						ep.WithProviderSpecific(providerSpecificWeight, strconv.FormatFloat(item.Weight, 'g', 2, 64))
+						// -1 precision: the smallest number of digits that still parses back to the
+						// exact value, so a round-trip through this string never loses precision
+						// (a fixed small precision, e.g. 2, renders 100 as "1e+02" and truncates
+						// fractional weights like 33.33 down to "33").
+						ep.WithProviderSpecific(providerSpecificWeight, strconv.FormatFloat(item.Weight, 'g', -1, 64))
 						endpoints = append(endpoints, ep.WithSetIdentifier(strconv.FormatInt(int64(index), 10)))
 					}
 				}
@@ -313,7 +317,7 @@ func (p *GoogleProvider) AdjustEndpoints(endpoints []*endpoint.Endpoint) ([]*end
 					weight = "100"
 				}
 				if weight, err := strconv.ParseFloat(weight, 64); err == nil {
-					ep.WithProviderSpecific(providerSpecificWeight, strconv.FormatFloat(weight, 'g', 2, 64))
+					ep.WithProviderSpecific(providerSpecificWeight, strconv.FormatFloat(weight, 'g', -1, 64))
 				}
 				if index, err := strconv.ParseInt(ep.SetIdentifier, 10, 64); err != nil || index < 0 {
 					resource := ep.Labels[endpoint.ResourceLabelKey]

@@ -94,6 +94,28 @@ func TestProviderSpecificAnnotations(t *testing.T) {
 			setIdentifier: "",
 		},
 		{
+			// Unlike aws/coredns/scw/webhook, the "google-" segment is kept as part of the
+			// property name (google.go's constants, e.g. "google-routing-policy", expect it).
+			name: "Google routing policy annotation",
+			annotations: map[string]string{
+				"external-dns.kubernetes.io/google-routing-policy": "wrr",
+			},
+			expected: endpoint.ProviderSpecific{
+				{Name: "google-routing-policy", Value: "wrr"},
+			},
+			setIdentifier: "",
+		},
+		{
+			name: "Google weight annotation",
+			annotations: map[string]string{
+				"external-dns.kubernetes.io/google-weight": "50",
+			},
+			expected: endpoint.ProviderSpecific{
+				{Name: "google-weight", Value: "50"},
+			},
+			setIdentifier: "",
+		},
+		{
 			name: "Azure tags annotation",
 			annotations: map[string]string{
 				AzureTagsKey: "cost-center=12345,owner=backend-team",
