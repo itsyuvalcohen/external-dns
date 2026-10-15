@@ -33,6 +33,38 @@ metadata:
     external-dns.kubernetes.io/google-location: "us-east1"
 ```
 
+A single hostname's geolocation routing policy is typically built from several separate
+resources -- one per location -- each annotated with its own `google-location` and sharing
+the same `hostnames`/`host` entry. ExternalDNS derives the `set-identifier` it uses to tell
+these endpoints apart from `google-location` automatically, so no `set-identifier` annotation
+is needed:
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: app-us-east1
+  annotations:
+    external-dns.kubernetes.io/google-routing-policy: "geo"
+    external-dns.kubernetes.io/google-location: "us-east1"
+spec:
+  hostnames:
+    - app.example.com
+  # ...
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: app-us-west1
+  annotations:
+    external-dns.kubernetes.io/google-routing-policy: "geo"
+    external-dns.kubernetes.io/google-location: "us-west1"
+spec:
+  hostnames:
+    - app.example.com
+  # ...
+```
+
 #### Weighted Round Robin routing policies
 
 Specifying a value of `wrr` for the `external-dns.kubernetes.io/google-routing-policy`
