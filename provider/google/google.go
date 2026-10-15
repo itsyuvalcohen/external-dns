@@ -44,12 +44,12 @@ import (
 const (
 	defaultTTL = 300
 
-	providerSpecificRoutingPolicy     = "google-routing-policy"
+	providerSpecificRoutingPolicy     = "google/routing-policy"
 	providerSpecificRoutingPolicyNone = ""
 	providerSpecificRoutingPolicyGeo  = "geo"
 	providerSpecificRoutingPolicyWrr  = "wrr"
-	providerSpecificLocation          = "google-location"
-	providerSpecificWeight            = "google-weight"
+	providerSpecificLocation          = "google/location"
+	providerSpecificWeight            = "google/weight"
 )
 
 type managedZonesCreateCallInterface interface {
